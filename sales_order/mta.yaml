@@ -1,0 +1,80 @@
+_schema-version: 3.3.0
+ID: sales_order
+version: 1.0.0
+description: "A simple CAP project."
+parameters:
+  enable-parallel-deployments: true
+build-parameters:
+  before-all:
+    - builder: custom
+      commands:
+        - npm ci
+        - npx cds build --production
+modules:
+  - name: sales_order-srv
+    type: nodejs
+    path: gen/srv
+    parameters:
+      buildpack: nodejs_buildpack
+      readiness-health-check-type: http
+      readiness-health-check-http-endpoint: /health
+    build-parameters:
+      builder: npm
+    provides:
+      - name: srv-api # required by consumers of CAP services (e.g. approuter)
+        properties:
+          srv-url: ${default-url}
+    requires:
+      - name: sales_order-destination
+      - name: sales_order-db
+
+  - name: sales_order-db-deployer
+    type: hdb
+    path: gen/db
+    parameters:
+      buildpack: nodejs_buildpack
+    requires:
+      - name: sales_order-db
+
+resources:
+  - name: sales_order-destination
+    type: org.cloudfoundry.managed-service
+    parameters:
+      config:
+        HTML5Runtime_enabled: true
+        init_data:
+          instance:
+            destinations:
+              - Authentication: NoAuthentication
+                Name: ui5
+                ProxyType: Internet
+                Type: HTTP
+                URL: https://ui5.sap.com
+            existing_destinations_policy: update
+        version: 1.0.0
+      service: destination
+      service-plan: lite​
+  - name: sales_order-db
+    type: com.sap.xs.hdi-container
+    parameters:
+      service: hana
+      service-plan: hdi-shared
+  - name: SalesOrder-order
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: destination
+      service-plan: lite
+
+  - name: SalesOrder-srv
+    type: nodejs_buildpack
+    parameters:
+      buildpack: nodejs_buildpack
+      build-parameters: 
+      builder: npm-ci
+      provides: 
+        -name: srv-api # required by consumers of CAP services (e.g. approuter)
+        properties:
+          srv-url ${default-url}
+        requires:
+          - name: SalesOrder-order
+          - name: sales_order-destination
